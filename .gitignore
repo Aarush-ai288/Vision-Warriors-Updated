@@ -1,0 +1,424 @@
+import tkinter as tk
+from tkinter import filedialog, scrolledtext, StringVar, OptionMenu, END
+from tkinter.font import Font
+from PIL import Image, ImageTk
+import cv2
+import numpy as np
+import pyttsx3
+import threading
+import os
+import time
+import requests
+from pypdf import PdfReader
+from docx import Document
+import fitz
+from sklearn.cluster import KMeans
+
+app_state = {
+    'running': False,
+    'cap': None,
+    'tk_img': None,
+    'color_history': [],
+    'last_spoken_color': None,
+    'last_speak_time': 0
+}
+
+stop_requested = False
+pause_event = threading.Event()
+pause_event.set()
+current_thread = None
+current_voice = 0
+
+COMMON_COLORS = {
+    "Black": (0, 0, 0),
+    "White": (255, 255, 255),
+    "Red": (255, 0, 0),
+    "Green": (0, 128, 0),
+    "Blue": (0, 0, 255),
+    "Yellow": (255, 255, 0),
+    "Orange": (255, 165, 0),
+    "Purple": (128, 0, 128),
+    "Pink": (255, 192, 203),
+    "Brown": (139, 69, 19),
+    "Gray": (128, 128, 128),
+    "Cyan": (0, 255, 255),
+    "Magenta": (255, 0, 255),
+    "Light Gray": (211, 211, 211),
+    "Dark Gray": (169, 169, 169),
+    "Light Blue": (173, 216, 230),
+    "Dark Blue": (0, 0, 139),
+    "Light Green": (144, 238, 144),
+    "Dark Green": (0, 100, 0),
+    "Light Pink": (255, 182, 193),
+    "Dark Orange": (255, 140, 0),
+    "Lime": (0, 255, 0),
+    "Teal": (0, 128, 128),
+    "Navy": (0, 0, 128),
+    "Gold": (255, 215, 0),
+    "Indigo": (75, 0, 130),
+    "Turquoise": (64, 224, 208),
+    "Violet": (238, 130, 238),
+    "Pink": (250, 128, 114),
+    "Coral": (255, 127, 80),
+    "Crimson": (220, 20, 60),
+    "Peach": (255, 218, 185),
+    "Mint": (189, 252, 201),
+    "Lavender": (230, 230, 250),
+    "Beige": (245, 245, 220),
+    "Slate Blue": (106, 90, 205),
+    "Steel Blue": (70, 130, 180),
+    "Tan": (210, 180, 140),
+    "Olive": (128, 128, 0),
+    "Periwinkle": (204, 204, 255),
+    "Azure": (240, 255, 255),
+    "Papaya Whip": (255, 239, 213),
+    "Mint Cream": (245, 255, 250),
+    "Misty Rose": (255, 228, 225),
+    "Wheat": (245, 222, 179),
+    "Snow": (255, 250, 250),
+    "Alice Blue": (240, 248, 255),
+    "Antique White": (250, 235, 215),
+    "Blanched Almond": (255, 235, 205),
+    "Lavender Blush": (255, 240, 245),
+    "Seashell": (255, 245, 238),
+    "Honeydew": (240, 255, 240),
+    "Linen": (250, 240, 230),
+    "Light Steel Blue": (176, 196, 222),
+    "Dark Khaki": (189, 183, 107),
+    "Medium Aquamarine": (102, 205, 170),
+    "Medium Orchid": (186, 85, 211),
+    "Medium Violet Red": (199, 21, 133),
+    "Indian Red": (205, 92, 92),
+    "Rosy Brown": (188, 143, 143),
+    "Burly Wood": (222, 184, 135),
+    "Sandy Brown": (244, 164, 96),
+    "Light Coral": (240, 128, 128),
+    "Dark Slate Gray": (47, 79, 79),
+    "Dark Olive Green": (85, 107, 47),
+    "Royal Blue": (65, 105, 225),
+    "Slate Gray": (112, 128, 144),
+    "Spring Green": (0, 255, 127),
+    "Goldenrod": (218, 165, 32),
+    "Light Goldenrod Yellow": (250, 250, 210),
+    "Light Salmon": (255, 160, 122),
+    "Dark Salmon": (233, 150, 122),
+    "Medium Slate Blue": (123, 104, 238),
+    "Dark Orchid": (153, 50, 204),
+    "Light Sea Green": (32, 178, 170),
+    "Medium Turquoise": (72, 209, 204),
+    "Dark Turquoise": (0, 206, 209),
+    "Lime Green": (50, 205, 50),
+    "Forest Green": (34, 139, 34),
+    "Medium Blue": (0, 0, 205),
+    "Cornflower Blue": (100, 149, 237),
+    "Cadet Blue": (95, 158, 160),
+    "Steel Blue": (70, 130, 180),
+    "Slate Blue": (106, 90, 205),
+    "Medium Purple": (147, 112, 219),
+    "Dark Violet": (148, 0, 211),
+    "Purple": (128, 0, 128),
+    "Indigo": (75, 0, 130),
+    "Medium Orchid": (186, 85, 211),
+    "Violet": (238, 130, 238),
+    "Plum": (221, 160, 221),
+    "Orchid": (218, 112, 214),
+    "Dark Violet": (148, 0, 211),
+}
+
+
+def speak(text):
+    global stop_requested, current_thread, current_voice
+    stop_requested = False
+
+    def run():
+        try:
+            engine = pyttsx3.init()
+            voices = engine.getProperty('voices')
+            engine.setProperty('rate', 180)
+            if current_voice < len(voices):
+                engine.setProperty('voice', voices[current_voice].id)
+            engine.say(text)
+            engine.runAndWait()
+        except Exception as e:
+            print(f"Speech error: {e}")
+
+    if current_thread and current_thread.is_alive():
+        stop_requested = True
+        current_thread.join()
+
+    current_thread = threading.Thread(target=run)
+    current_thread.start()
+
+def stop_speech():
+    global stop_requested
+    stop_requested = True
+    try:
+        pyttsx3.init().stop()
+    except:
+        pass
+
+def rgb_to_hex(rgb):
+    return '#%02x%02x%02x' % tuple(rgb)
+
+def closest_color(rgb):
+    min_dist = float('inf')
+    name = "Unknown"
+    for color_name, color_rgb in COLOR_NAMES.items():
+        dist = np.linalg.norm(np.array(rgb) - np.array(color_rgb))
+        if dist < min_dist:
+            min_dist = dist
+            name = color_name
+    return name
+
+def ocr_space_file(filename, api_key='K87541135188957', language='eng'):
+    payload = {'isOverlayRequired': False, 'apikey': api_key, 'language': language}
+    with open(filename, 'rb') as f:
+        r = requests.post('https://api.ocr.space/parse/image', files={'file': f}, data=payload)
+    result = r.json()
+    try:
+        return result['ParsedResults'][0]['ParsedText']
+    except:
+        return "Error: Could not extract text from image."
+
+def get_dominant_color(image_path, k=1):
+    image = cv2.imread(image_path)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    pixels = image.reshape(-1, 3)
+    kmeans = KMeans(n_clusters=k, n_init=10)
+    kmeans.fit(pixels)
+    dominant_cluster_idx = np.argmax(np.bincount(kmeans.labels_))
+    dominant_color = kmeans.cluster_centers_[dominant_cluster_idx]
+    return tuple(dominant_color.astype(int))
+
+def get_complementary_color(rgb):
+    return (255 - rgb[0], 255 - rgb[1], 255 - rgb[2])
+
+def get_image_text_color(image_path):
+    dominant_color = get_dominant_color(image_path)
+    return get_complementary_color(dominant_color)
+
+def extract_docx_text_color(path):
+    doc = Document(path)
+    text = ""
+    colors = []
+    for para in doc.paragraphs:
+        for run in para.runs:
+            text += run.text
+            if run.font.color and run.font.color.rgb:
+                rgb = run.font.color.rgb
+                colors.append((rgb[0], rgb[1], rgb[2]))
+        text += "\n"
+    avg_color = np.mean(colors, axis=0).astype(int) if colors else (0, 0, 0)
+    return text, tuple(avg_color)
+
+def extract_pdf_text_color(path):
+    doc = fitz.open(path)
+    text = ""
+    colors = []
+    for page in doc:
+        text += page.get_text("text")
+        for block in page.get_text("dict")["blocks"]:
+            if "lines" in block:
+                for line in block["lines"]:
+                    for span in line["spans"]:
+                        if "color" in span:
+                            color_int = span["color"]
+                            r = (color_int >> 16) & 255
+                            g = (color_int >> 8) & 255
+                            b = color_int & 255
+                            colors.append((r, g, b))
+    if colors:
+        avg_color = np.mean(colors, axis=0).astype(int)
+        return text, tuple(avg_color)
+    else:
+        return text, (0, 0, 0)
+
+def read_txt(path):
+    with open(path, 'r', encoding='utf-8') as f:
+        return f.read(), (0, 0, 0)
+
+def choose_file(output_widget):
+    path = filedialog.askopenfilename(
+        filetypes=[("All Supported", "*.pdf *.txt *.png *.jpg *.jpeg *.docx"),
+                   ("PDF files", "*.pdf"),
+                   ("Text files", "*.txt"),
+                   ("Image files", "*.png *.jpg *.jpeg"),
+                   ("Word files", "*.docx")])
+    if not path:
+        return
+
+    try:
+        if path.lower().endswith(('.png', '.jpg', '.jpeg')):
+            text = ocr_space_file(path)
+            color = get_image_text_color(path)
+        elif path.endswith(".pdf"):
+            text, color = extract_pdf_text_color(path)
+        elif path.endswith(".txt"):
+            text, color = read_txt(path)
+        elif path.endswith(".docx"):
+            text, color = extract_docx_text_color(path)
+        else:
+            text, color = "Unsupported file type.", (0, 0, 0)
+
+        color_name = closest_color(color)
+        hex_color = rgb_to_hex(color)
+
+    except Exception as e:
+        text, color_name, hex_color = f"Error reading file: {e}", "Unknown", "#000000"
+
+    output_widget.delete(1.0, END)
+    output_widget.tag_config("colored_text", foreground=hex_color)
+    output_widget.insert(END, text, "colored_text")
+    output_widget.insert(END, f"\n\nDetected text color: {color_name}")
+
+    if text.strip():
+        speak(f"The detected text color is {color_name}. {text}")
+    else:
+        output_widget.insert(END, "\nNo readable text found.")
+
+def start_webcam():
+    cam_win = tk.Toplevel()
+    cam_win.title("🎥 Webcam Color Detector")
+    cam_win.configure(bg="#1e1e2f")
+
+    canvas = tk.Canvas(cam_win, bg="#222", width=640, height=480)
+    canvas.pack()
+
+    label = tk.Label(cam_win, text="Detecting...", bg="#1e1e2f", fg="white", font=("Arial", 14))
+    label.pack()
+    box = tk.Label(cam_win, width=20, height=2, bg="white", bd=2, relief="solid")
+    box.pack()
+
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        speak("Unable to access the webcam.")
+        cam_win.destroy()
+        return
+
+    color_history = []
+    app_state['last_speak_time'] = 0
+    app_state['cap'] = cap
+
+    # Initialize image frame
+    ret, frame = cap.read()
+    if not ret:
+        cap.release()
+        cam_win.destroy()
+        return
+    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    img = Image.fromarray(frame_rgb)
+    tk_img = ImageTk.PhotoImage(img)
+    canvas_image = canvas.create_image(0, 0, anchor="nw", image=tk_img)
+    canvas.image = tk_img
+
+    def update_frame():
+        if not cap.isOpened():
+            return
+
+        ret, frame = cap.read()
+        if not ret:
+            return
+
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        img = Image.fromarray(frame_rgb).resize((640, 480))
+        tk_img = ImageTk.PhotoImage(img)
+        canvas.itemconfig(canvas_image, image=tk_img)
+        canvas.image = tk_img
+
+        # Region of interest
+        h, w = frame_rgb.shape[:2]
+        roi = frame_rgb[h//2-50:h//2+50, w//2-50:w//2+50]
+        avg_color = np.mean(roi, axis=(0, 1)).astype(int)
+        color_history.append(avg_color)
+        if len(color_history) > 7:
+            color_history.pop(0)
+        smoothed = np.mean(color_history, axis=0).astype(int)
+        name = closest_color(tuple(smoothed))
+
+        label.config(text=f"Detected Color: {name}")
+        box.config(bg=name.lower() if name.lower() in [n.lower() for n in COLOR_NAMES.keys()] else "white")
+
+        current_time = time.time()
+        # Speak every time a new color is detected, and there's a delay to avoid repetition
+        if current_time - app_state['last_speak_time'] > 4:
+            speak(f"The color is {name}")
+            app_state['last_speak_time'] = current_time
+
+        cam_win.after(30, update_frame)
+
+    def on_closing():
+        if cap.isOpened():
+            cap.release()
+        cam_win.destroy()
+
+    cam_win.protocol("WM_DELETE_WINDOW", on_closing)
+    update_frame()
+
+def load_image_view():
+    path = filedialog.askopenfilename(filetypes=[("Image Files", "*.jpg *.jpeg *.png *.bmp")])
+    if not path:
+        return
+    img = Image.open(path)
+    img_window = tk.Toplevel()
+    img_window.title("🖱 Click to Detect Color")
+    img.thumbnail((1000, 800))
+    tk_img = ImageTk.PhotoImage(img)
+    canvas = tk.Canvas(img_window, width=tk_img.width(), height=tk_img.height())
+    canvas.pack()
+    canvas.create_image(0, 0, anchor="nw", image=tk_img)
+    canvas.image = tk_img
+    label = tk.Label(img_window, text="Click to detect color", font=("Arial", 14))
+    label.pack()
+
+    def click(event):
+        # Scale the coordinates to the image size
+        x = int(event.x * (img.width / tk_img.width()))
+        y = int(event.y * (img.height / tk_img.height()))
+
+        # Get the color of the pixel at the clicked position
+        bgr_img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+        region = bgr_img[max(y-10, 0):y+10, max(x-10, 0):x+10]
+        avg = np.mean(region, axis=(0, 1)).astype(int)[::-1]  # Convert to RGB order
+        name = closest_color(tuple(avg))
+
+        # Update the label with the detected color name
+        label.config(text=f"The color is {name}")
+        
+        # Speak the detected color
+        speak(f"The color is {name}")
+
+    # Bind the click event to the canvas
+    canvas.bind("<Button-1>", click)
+
+
+def main():
+    global current_voice
+    root = tk.Tk()
+    root.title("🎯 Vision Warriors")
+    root.geometry("850x800")
+    root.configure(bg="#1e1e2f")
+
+    output_box = scrolledtext.ScrolledText(root, wrap='word', font=("Courier New", 12), height=18, width=100)
+    output_box.pack(pady=10)
+
+    tk.Label(root, text="🦾 Vision Warriors", font=("Arial", 20, "bold"), fg="#00e676", bg="#1e1e2f").pack(pady=5)
+
+    tk.Button(root, text="📂 Choose Text File", font=("Arial", 14), bg="#00bcd4", fg="white",
+              command=lambda: choose_file(output_box)).pack(pady=5)
+
+    tk.Button(root, text="🖱 Image Color Detector", font=("Arial", 14), bg="#9c27b0", fg="white",
+              command=load_image_view).pack(pady=5)
+
+    tk.Button(root, text="🎥 Webcam Color Detector", font=("Arial", 14), bg="#4caf50", fg="white",
+              command=start_webcam).pack(pady=5)
+
+    tk.Button(root, text="⏹ Stop Speech", font=("Arial", 14), bg="#f44336", fg="white",
+              command=stop_speech).pack(pady=5)
+
+    
+
+    root.protocol("WM_DELETE_WINDOW", lambda: (stop_speech(), root.destroy()))
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()
