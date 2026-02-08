@@ -29,7 +29,7 @@ pause_event.set()
 current_thread = None
 current_voice = 0
 
-COMMON_COLORS = {
+COLOR_NAMES = {
     "Black": (0, 0, 0),
     "White": (255, 255, 255),
     "Red": (255, 0, 0),
@@ -44,87 +44,12 @@ COMMON_COLORS = {
     "Cyan": (0, 255, 255),
     "Magenta": (255, 0, 255),
     "Light Gray": (211, 211, 211),
-    "Dark Gray": (169, 169, 169),
+    "Dark Gray": (64, 64, 64),
     "Light Blue": (173, 216, 230),
     "Dark Blue": (0, 0, 139),
     "Light Green": (144, 238, 144),
     "Dark Green": (0, 100, 0),
-    "Light Pink": (255, 182, 193),
-    "Dark Orange": (255, 140, 0),
-    "Lime": (0, 255, 0),
-    "Teal": (0, 128, 128),
-    "Navy": (0, 0, 128),
-    "Gold": (255, 215, 0),
-    "Indigo": (75, 0, 130),
-    "Turquoise": (64, 224, 208),
-    "Violet": (238, 130, 238),
-    "Pink": (250, 128, 114),
-    "Coral": (255, 127, 80),
-    "Crimson": (220, 20, 60),
-    "Peach": (255, 218, 185),
-    "Mint": (189, 252, 201),
-    "Lavender": (230, 230, 250),
-    "Beige": (245, 245, 220),
-    "Slate Blue": (106, 90, 205),
-    "Steel Blue": (70, 130, 180),
-    "Tan": (210, 180, 140),
-    "Olive": (128, 128, 0),
-    "Periwinkle": (204, 204, 255),
-    "Azure": (240, 255, 255),
-    "Papaya Whip": (255, 239, 213),
-    "Mint Cream": (245, 255, 250),
-    "Misty Rose": (255, 228, 225),
-    "Wheat": (245, 222, 179),
-    "Snow": (255, 250, 250),
-    "Alice Blue": (240, 248, 255),
-    "Antique White": (250, 235, 215),
-    "Blanched Almond": (255, 235, 205),
-    "Lavender Blush": (255, 240, 245),
-    "Seashell": (255, 245, 238),
-    "Honeydew": (240, 255, 240),
-    "Linen": (250, 240, 230),
-    "Light Steel Blue": (176, 196, 222),
-    "Dark Khaki": (189, 183, 107),
-    "Medium Aquamarine": (102, 205, 170),
-    "Medium Orchid": (186, 85, 211),
-    "Medium Violet Red": (199, 21, 133),
-    "Indian Red": (205, 92, 92),
-    "Rosy Brown": (188, 143, 143),
-    "Burly Wood": (222, 184, 135),
-    "Sandy Brown": (244, 164, 96),
-    "Light Coral": (240, 128, 128),
-    "Dark Slate Gray": (47, 79, 79),
-    "Dark Olive Green": (85, 107, 47),
-    "Royal Blue": (65, 105, 225),
-    "Slate Gray": (112, 128, 144),
-    "Spring Green": (0, 255, 127),
-    "Goldenrod": (218, 165, 32),
-    "Light Goldenrod Yellow": (250, 250, 210),
-    "Light Salmon": (255, 160, 122),
-    "Dark Salmon": (233, 150, 122),
-    "Medium Slate Blue": (123, 104, 238),
-    "Dark Orchid": (153, 50, 204),
-    "Light Sea Green": (32, 178, 170),
-    "Medium Turquoise": (72, 209, 204),
-    "Dark Turquoise": (0, 206, 209),
-    "Lime Green": (50, 205, 50),
-    "Forest Green": (34, 139, 34),
-    "Medium Blue": (0, 0, 205),
-    "Cornflower Blue": (100, 149, 237),
-    "Cadet Blue": (95, 158, 160),
-    "Steel Blue": (70, 130, 180),
-    "Slate Blue": (106, 90, 205),
-    "Medium Purple": (147, 112, 219),
-    "Dark Violet": (148, 0, 211),
-    "Purple": (128, 0, 128),
-    "Indigo": (75, 0, 130),
-    "Medium Orchid": (186, 85, 211),
-    "Violet": (238, 130, 238),
-    "Plum": (221, 160, 221),
-    "Orchid": (218, 112, 214),
-    "Dark Violet": (148, 0, 211),
 }
-
 
 def speak(text):
     global stop_requested, current_thread, current_voice
@@ -333,6 +258,10 @@ def start_webcam():
         if len(color_history) > 7:
             color_history.pop(0)
         smoothed = np.mean(color_history, axis=0).astype(int)
+        
+        # Debug: Print RGB values
+        print(f"Detected RGB: {smoothed}")
+        
         name = closest_color(tuple(smoothed))
 
         label.config(text=f"Detected Color: {name}")
@@ -415,7 +344,17 @@ def main():
     tk.Button(root, text="⏹ Stop Speech", font=("Arial", 14), bg="#f44336", fg="white",
               command=stop_speech).pack(pady=5)
 
-    
+    voices = pyttsx3.init().getProperty('voices')
+    voice_names = [v.name for v in voices]
+    voice_var = StringVar(root)
+    voice_var.set(voice_names[0])
+
+    def set_voice(name):
+        global current_voice
+        current_voice = voice_names.index(name)
+
+    tk.Label(root, text="🗣 Select Voice Language", bg="#1e1e2f", fg="white", font=("Arial", 12)).pack(pady=5)
+    OptionMenu(root, voice_var, *voice_names, command=set_voice).pack(pady=5)
 
     root.protocol("WM_DELETE_WINDOW", lambda: (stop_speech(), root.destroy()))
     root.mainloop()
